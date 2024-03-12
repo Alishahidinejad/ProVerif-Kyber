@@ -1,0 +1,99 @@
+(* Definition of Channels *)
+free PriChannel : channel [private].
+free PubChannel : channel.
+
+(* Private Terms *)
+free ID_i : bitstring [private].
+free PW_i : bitstring [private].
+free ssk : bitstring [private].
+
+(* Functions *)
+fun h1(bitstring) : bitstring.
+fun h2(bitstring, bitstring) : bitstring.
+fun h3(bitstring, bitstring, bitstring) : bitstring.
+fun h4(bitstring, bitstring, bitstring, bitstring) : bitstring.
+fun h5(bitstring, bitstring, bitstring, bitstring, bitstring) : bitstring.
+fun Enc_Kyber(bitstring, bitstring, bitstring) : bitstring.
+fun Kegen(bitstring) : bitstring.
+fun XOR(bitstring, bitstring): bitstring.
+fun AES_SE(bitstring, bitstring): bitstring.
+
+(* Destructors *)
+reduc forall m1 : bitstring, m2 : bitstring, m3 : bitstring; Dec_Kyber(Enc_Kyber(m1, m2, Kegen(m3)), m3) = m1.
+reduc forall m1 : bitstring, m2 : bitstring; AES_SD(AES_SE(m1, m2), m2) = m1.
+reduc forall m1 : bitstring, m2 : bitstring; DXOR(m1, XOR(m1, m2)) = m2.
+
+(* queries *)
+query attacker (ssk).
+query ID : bitstring; inj-event (Session_End (ID)) ==> inj-event (Session_Start (ID)).
+noninterf ID_i.
+weaksecret PW_i.
+
+(* Events *)
+event Session_Start (bitstring).
+event Session_End (bitstring).
+
+(* Device Process *)
+let pD =
+new sk_i : bitstring;
+new r_i : bitstring;
+new m_i : bitstring;
+new a_i : bitstring;
+new r_i_new : bitstring;
+new T_i : bitstring;
+let IP_i = h3(ID_i, PW_i, r_i) in
+let PK_i = Kegen(sk_i) in
+out (PriChannel, (IP_i, PK_i));
+in (PriChannel, (PID_i : bitstring, B_i : bitstring, PK_j : bitstring));
+let A_i = DXOR(IP_i, B_i) in
+let C_i = Enc_Kyber(m_i, a_i, PK_j) in
+let ED_i = AES_SE(r_i_new, A_i) in
+let IT_i = h4(ID_i, m_i, r_i_new, T_i) in
+event Session_Start(ID_i);
+out (PubChannel, (PID_i, ED_i, C_i, IT_i, T_i));
+in (PubChannel, (xE_1 : bitstring, xE_2 : bitstring, xC_j : bitstring, xIT_j : bitstring));
+let xm_j = Dec_Kyber(xC_j, sk_i) in
+let xr_j_new = AES_SD(xE_1, A_i) in
+let ssk_i = h5(ID_i, m_i, xm_j, r_i_new, xr_j_new) in
+out (PubChannel, AES_SE(ssk, ssk_i));
+let xPID_i_new = AES_SD(xE_2, ssk_i) in
+let xxIT_j = h3(xPID_i_new, T_i, ssk_i) in
+if (xIT_j = xxIT_j) then
+let Ver_i = h4(xPID_i_new, ID_i, ssk_i, T_i) in
+out (PubChannel, (Ver_i));
+0.
+
+(* Server Process *)
+let pS =
+new sk_j : bitstring;
+new r_j : bitstring;
+new PID_i : bitstring;
+new m_j : bitstring;
+new a_j : bitstring;
+new r_j_new : bitstring;
+new PID_i_new : bitstring;
+let PK_j = Kegen(sk_j) in
+in (PriChannel, (IP_i : bitstring, PK_i : bitstring));
+let A_i = h2(ID_i, r_j) in
+let B_i = XOR(IP_i, A_i) in
+out (PriChannel, (PID_i, B_i, PK_j));
+in (PubChannel, (xPID_i : bitstring, xED_i : bitstring, xC_i : bitstring, xIT_i : bitstring, xT_i : bitstring));
+let xr_i_new = AES_SD(xED_i, A_i) in
+let xm_i = Dec_Kyber(xC_i, sk_j) in
+let xxIT_i = h4(ID_i, xm_i, xr_i_new, xT_i) in
+if (xIT_i = xxIT_i) then
+let C_j = Enc_Kyber(m_j, a_j, PK_i) in
+let ssk_j = h5(ID_i, xm_i, m_j, xr_i_new, r_j_new) in
+out (PubChannel, AES_SE(ssk, ssk_j));
+let E_1 = AES_SE(r_j_new, A_i) in
+let E_2 = AES_SE(PID_i_new, ssk_j) in
+let IT_j = h3(PID_i_new, xT_i, ssk_j) in
+out (PubChannel, (E_1, E_2, C_j, IT_j));
+in (PubChannel, (xVer_i : bitstring));
+let xxVer_i = h4(PID_i_new, ID_i, ssk_j, xT_i) in
+if (xVer_i = xxVer_i) then
+event Session_End(ID_i);
+0.
+
+process
+  ((!pD) | (!pS))
